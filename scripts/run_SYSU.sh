@@ -3,12 +3,13 @@ set -euo pipefail
 
 # --- Edit these parameters as needed ---
 dataset_name="SYSU"
-device="cuda:5"
+device="cuda:7"
 num_epoch="10"
 lr="5e-6"
 root_dir="/data0/zza_data/reid/tireid_data/converted/ItR"
+pretrained_model=""/data1/zza_data/reid/pretrained/best0.pth""
 batch_size="96"
-seed="2"
+seed="1"
 optimizer="Adam"
 weight_decay="4e-5"
 momentum="0.9"
@@ -22,7 +23,9 @@ stride_size="16"
 output_dir="logs"
 log_period="100"
 eval_period="1"
+rde_warmup="2"
 extra_args=""
+
 # --------------------------------------
 
 echo "Running: python3 main.py --dataset_name $dataset_name --device $device --num_epoch $num_epoch --lr $lr --batch_size $batch_size --optimizer $optimizer --weight_decay $weight_decay --momentum $momentum --num_workers $num_workers --text_length $text_length --vocab_size $vocab_size --warmup_factor $warmup_factor --lrscheduler $lrscheduler --num_instance $num_instance --stride_size $stride_size --output_dir $output_dir --log_period $log_period --eval_period $eval_period --root_dir $root_dir $extra_args"
@@ -31,4 +34,4 @@ python3 main.py --dataset_name "$dataset_name" --device "$device" --seed "$seed"
 	--lr "$lr" --batch_size "$batch_size" --optimizer "$optimizer" --weight_decay "$weight_decay" \
 	--momentum "$momentum" --num_workers "$num_workers" --text_length "$text_length" --vocab_size "$vocab_size" \
 	--warmup_factor "$warmup_factor" --lrscheduler "$lrscheduler" --num_instance "$num_instance" --stride_size "$stride_size" \
-	--output_dir "$output_dir" --log_period "$log_period" --eval_period "$eval_period" --root_dir "$root_dir" $extra_args
+	--output_dir "$output_dir" --log_period "$log_period" --eval_period "$eval_period" --root_dir "$root_dir" --pretrained_model "$pretrained_model" $extra_args

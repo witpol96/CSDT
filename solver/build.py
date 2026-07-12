@@ -24,14 +24,14 @@ def build_optimizer(args, model):
         if "classifier" in key or "mlm_head" in key:
             lr = args.lr * args.lr_factor
         
-        # if "visul_emb_layer" in key:
-        #     lr =  0.0005
-        # if "texual_emb_layer" in key:
-        #     lr =  0.0005 
         if "visul_emb_layer" in key:
-            lr =  0.001
+            lr =  0.0005
         if "texual_emb_layer" in key:
-            lr =  0.001 
+            lr =  0.0005 
+        # if "visul_emb_layer" in key:
+        #     lr =  0.001
+        # if "texual_emb_layer" in key:
+        #     lr =  0.001 
         
         # if "ir_adapter" in key:
         #     lr = 0.001

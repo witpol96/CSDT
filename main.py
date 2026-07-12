@@ -1,5 +1,5 @@
 """
-Main program of TTVI
+Main program of CSDT
 """
 import torch
 import numpy as np
@@ -20,7 +20,7 @@ from utils.comm import get_rank
 def seed_torch(seed):
     seed = int(seed)
     random.seed(seed)
-    os.environ['PYTHONASHSEED'] = str(seed)
+    os.environ['PYTHONHASHSEED'] = str(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
@@ -41,7 +41,7 @@ def main(config):
     device = config.device
     cur_time = time.strftime("%Y%m%d_%H%M%S", time.localtime())
     config.output_dir = os.path.join(config.output_dir, config.dataset_name, f'{cur_time}_{name}_{config.loss_names}')
-    logger = setup_logger('RDE', save_dir=config.output_dir, if_train=config.training, distributed_rank=get_rank())
+    logger = setup_logger('CSDT', save_dir=config.output_dir, if_train=config.training, distributed_rank=get_rank())
     logger.info("Using {} GPUs".format(num_gpus))
     logger.info(str(config).replace(',', '\n'))
     save_train_configs(config.output_dir, config)
@@ -71,6 +71,7 @@ if __name__ == '__main__':
     parser.add_argument("--val_dataset", default="test") # use val set when evaluate, if test use test set
     parser.add_argument("--resume", default=False, action='store_true')
     parser.add_argument("--resume_ckpt_file", default="", help='resume from ...')
+    parser.add_argument("--pretrained_model", default="", help='path to pretrained model')
 
     ######################## model general settings ########################
     parser.add_argument("--pretrain_choice", default='ViT-B/16') # whether use pretrained model

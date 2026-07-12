@@ -95,7 +95,7 @@ def build_testloader(args, dataset, transforms=None):
 
 
 def build_trainloader(args, dataset, transforms=None, aug=False):
-    logger = logging.getLogger("RDE.dataset")
+    logger = logging.getLogger("CSDT.dataset")
 
     num_workers = args.num_workers
     # dataset = __factory[args.dataset_name](root=args.root_dir)
@@ -116,10 +116,12 @@ def build_trainloader(args, dataset, transforms=None, aug=False):
                         text_length=args.text_length)
 
     logger.info('using random sampler')
+
     train_loader = DataLoader(train_set,
                                 batch_size=args.batch_size,
                                 shuffle=True,
                                 num_workers=num_workers,
-                                collate_fn=collate)
+                                collate_fn=collate, 
+                                drop_last=True)
     
     return train_loader

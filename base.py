@@ -31,8 +31,6 @@ class Base:
         self.compute_direction_loss = DirectionLoss()
 
     def _init_model(self):
-        # TODO Init RDE model
-        # self.model = Model(self.pid_num, self.img_h, self.img_w).to(self.device)
         self.model = build_model(self.args, self.num_classes)
         
 
@@ -120,6 +118,38 @@ class Base:
         loss = torch.sum(i2t_loss, dim=1) + torch.sum(t2i_loss, dim=1)
         # loss = torch.mean(torch.sum(i2t_loss, dim=1)) + torch.mean(torch.sum(t2i_loss, dim=1))
 # 
+        return loss
+
+    def compute_sdm_sim(self, sim_rgb, sim_ir, pid, epsilon=1e-8):
+        batch_size = sim_rgb.shape[0]
+        pid = pid.reshape((batch_size, 1))
+        pid_dist = pid - pid.t()
+        labels = (pid_dist == 0).float()
+        labels_distribute = labels / (labels.sum(dim=1, keepdim=True) + epsilon)
+
+        logit_scale = torch.ones([], device=sim_rgb.device) * (1 / self.args.temperature)
+
+        text_proj_rgb = logit_scale * sim_rgb
+        rgb_proj_text = text_proj_rgb.t()
+
+        text_proj_ir = logit_scale * sim_ir
+        ir_proj_text = text_proj_ir.t()
+
+        rgb2t_pred = F.softmax(rgb_proj_text, dim=1)
+        t2rgb_pred = F.softmax(text_proj_rgb, dim=1)
+        ir2t_pred = F.softmax(ir_proj_text, dim=1)
+        t2ir_pred = F.softmax(text_proj_ir, dim=1)
+
+        i2t_loss = ir2t_pred * (
+            F.log_softmax(ir_proj_text, dim=1)
+            - torch.log(0.9 * rgb2t_pred.detach() + 0.1 * labels_distribute + epsilon)
+        )
+        t2i_loss = t2ir_pred * (
+            F.log_softmax(text_proj_ir, dim=1)
+            - torch.log(0.9 * t2rgb_pred.detach() + 0.1 * labels_distribute + epsilon)
+        )
+
+        loss = torch.sum(i2t_loss, dim=1) + torch.sum(t2i_loss, dim=1)
         return loss
 
     def _init_optimizer(self):

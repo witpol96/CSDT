@@ -122,8 +122,8 @@ def split_prob(prob, threshld):
     pred = (prob > threshld)
     return (pred+0)
 
-def get_loss_ir(model, data_loader, args, bound=True):
-    logger = logging.getLogger("RDE.train")
+def get_loss(model, data_loader, args, bound=True):
+    logger = logging.getLogger("CSDT.train")
     model.eval()
     device = args.device
     data_size = data_loader.dataset.__len__()
@@ -165,22 +165,11 @@ def get_loss_ir(model, data_loader, args, bound=True):
     gmm_B.fit(input_loss_B.cpu().numpy())
     prob_B = gmm_B.predict_proba(input_loss_B.cpu().numpy())
     prob_B = prob_B[:, gmm_B.means_.argmin()]
-    # ------------------------------------------------------------------
-    # loss_data = input_loss_B.numpy()
-    # plt.figure(figsize=(8, 6))
-    # plt.hist(loss_data, bins=400, color='skyblue', edgecolor='black')  
-    # plt.title("Histogram of Tensor Values")
-    # plt.xlabel("Value")
-    # plt.ylabel("Frequency")
-
-    # plt.savefig(f"tensor_histogram_wobound.png")
-    # print("histogram has been saved")
- 
-    # -----------------------------------------------------------------------------
     pred_A = split_prob(prob_A, 0.5)
     pred_B = split_prob(prob_B, 0.5)
   
-    return torch.Tensor(pred_A), torch.Tensor(pred_B)
+    # return torch.Tensor(pred_A), torch.Tensor(pred_B)
+    return torch.tensor(prob_A, dtype=torch.float32), torch.tensor(prob_B, dtype=torch.float32)
 
 
 def train(args, coach):
@@ -193,30 +182,23 @@ def train(args, coach):
     scheduler = coach.scheduler
     checkpointer = coach.checkpointer
 
-
-
     log_period = args.log_period
     eval_period = args.eval_period
     device = args.device
-    num_epoch = 6 if args.dataset_name == 'LLCM' else 10
+    
+    num_epoch = args.num_epoch
     arguments = {}
-    arguments["num_epoch"] = num_epoch
+    arguments["num_epoch"] = args.num_epoch
     arguments["iteration"] = 0
 
-    logger = logging.getLogger("RDE.train")
+    logger = logging.getLogger("CSDT.train")
     logger.info('start training')
 
     meters = {
-        "loss": AverageMeter(),
-        "loss1": AverageMeter(),
-        "loss2": AverageMeter(),
-        "loss3": AverageMeter(),
-        "loss4": AverageMeter(),
-        "loss5": AverageMeter(),
-        "loss6": AverageMeter(),
-        "loss7": AverageMeter(),
-        "bge_loss2": AverageMeter(),
-        "tse_loss": AverageMeter(),
+        "bge_loss_rgb": AverageMeter(),
+        "tse_loss_rgb": AverageMeter(),
+        "bge_loss_ir": AverageMeter(),
+        "tse_loss_ir": AverageMeter(),
         "id_loss": AverageMeter(),
         "img_acc": AverageMeter(),
         "txt_acc": AverageMeter(),
@@ -233,10 +215,7 @@ def train(args, coach):
         pass
     best_model_path = os.path.join(args.output_dir, 'best_model.pth')
     
-    # for k, v in model.named_parameters():
-    #     print(k)
-
-    checkpointer.resume(f="/data1/zza_data/reid/pretrained/best0.pth")
+    checkpointer.resume(f=args.pretrained_model)
     # model.reset_vision_encoder()
     print("Start the 2nd stage of training")
 
@@ -260,10 +239,17 @@ def train(args, coach):
             meter.reset()
         model.train()
         model.epoch = epoch
-        _update_trainable(model, optimizer, epoch, freeze_epochs=1)
+        _update_trainable(model, optimizer, epoch, freeze_epochs=3)
 
-        pred_A, pred_B = get_loss_ir(model, train_loader, args, bound=True)
+
+        prob_A, prob_B = get_loss(model, train_loader, args, bound=True)
+
+
+        pred_A = torch.tensor(split_prob(prob_A.cpu().numpy(), 0.5), dtype=torch.float32)
+        pred_B = torch.tensor(split_prob(prob_B.cpu().numpy(), 0.5), dtype=torch.float32)
+        
         consensus_division = pred_A + pred_B # 0,1,2 
+        
         if args.dataset_name == 'SYSU':
             consensus_division[consensus_division==1] += torch.randint(0, 2, size=(((consensus_division==1)+0).sum(),))
             label_hat = consensus_division.clone()
@@ -273,10 +259,7 @@ def train(args, coach):
             label_hat = consensus_division.clone()
             label_hat[consensus_division>=1] = 1
             label_hat[consensus_division<1] = 0 
-
         label_hat_rgb = label_hat
-
-        print(label_hat.sum(), label_hat_rgb.sum())
 
         for n_iter, batch in enumerate(train_loader):
             batch = {k: v.to(device) for k, v in batch.items()}
@@ -290,6 +273,12 @@ def train(args, coach):
             caption_ids = batch["caption_ids"]
 
             if images[imgtype==1].shape[0] == 0 or images[imgtype==0].shape[0] == 0:
+                continue
+
+            label_hat_batch = batch['label_hat'].to(args.device) 
+            label_hat_batch_rgb = batch['label_hat_rgb'].to(args.device) 
+
+            if label_hat_batch_rgb[imgtype==1].sum() == 0 or label_hat_batch[imgtype==0].sum() == 0:
                 continue
             
 
@@ -305,76 +294,66 @@ def train(args, coach):
             t_feats_rgb = text_feats_rgb[torch.arange(text_feats_rgb.shape[0]), caption_ids.argmax(dim=-1)].float()
             t_feats_ir = text_feats_ir[torch.arange(text_feats_ir.shape[0]), caption_ids.argmax(dim=-1)].float()
 
-            i_tse_f_rgb = model.ir_visul_emb_layer(image_feats, atten_i, 0)
-            i_tse_f_ir = model.ir_visul_emb_layer(image_feats_ir, atten_i_ir, 0)
-            t_tse_f_rgb = model.ir_texual_emb_layer(text_feats_rgb, caption_ids, atten_t_rgb)
+            i_tse_f_rgb = model.share_visul_emb_layer(image_feats, atten_i, 0)
+            i_tse_f_ir = model.share_visul_emb_layer(image_feats_ir, atten_i_ir, 0)
+            t_tse_f_rgb = model.rgb_texual_emb_layer(text_feats_rgb, caption_ids, atten_t_rgb)
             t_tse_f_ir = model.ir_texual_emb_layer(text_feats_ir, caption_ids, atten_t_ir)
   
-            label_hat_batch = batch['label_hat'].to(i_feats_ir.device) 
-            label_hat_batch_rgb = batch['label_hat_rgb'].to(i_feats_rgb.device) 
+            
 
-            loss1, loss2 = objectives.compute_rbs(i_feats_rgb, t_feats_rgb[imgtype==1], i_tse_f_rgb, t_tse_f_rgb[imgtype==1], batch['pids'][imgtype==1], \
+            bge_cr, tse_cr = objectives.compute_rbs(i_feats_rgb, t_feats_rgb[imgtype==1], i_tse_f_rgb, t_tse_f_rgb[imgtype==1], batch['pids'][imgtype==1], \
                                                 label_hat=label_hat_batch_rgb[imgtype==1], margin=model.args.margin,tau=model.args.tau,\
                                                     loss_type=model.loss_type,logit_scale=model.logit_scale)
 
 
 
-            loss3, loss4 = objectives.compute_rbs(i_feats_ir, t_feats_ir, i_tse_f_ir, t_tse_f_ir, batch['pids'], \
+            bge_ci, tse_ci = objectives.compute_rbs(i_feats_ir, t_feats_ir, i_tse_f_ir, t_tse_f_ir, batch['pids'], \
                                                 label_hat=label_hat_batch * (imgtype==0 + 0), margin=model.args.margin,tau=model.args.tau,\
                                                     loss_type=model.loss_type,logit_scale=model.logit_scale)
 
+            # i_feats_irn = i_feats_ir[imgtype==1] / i_feats_ir[imgtype==1].norm(dim=-1, keepdim=True)
+            # i_feats_rgbn = i_feats_rgb / i_feats_rgb.norm(dim=-1, keepdim=True)
+
+            # t_feats_irn = t_feats_ir[imgtype==1] / t_feats_ir[imgtype==1].norm(dim=-1, keepdim=True)
+            # t_feats_rgbn = t_feats_rgb[imgtype==1] / t_feats_rgb[imgtype==1].norm(dim=-1, keepdim=True)
+            
             # i_tse_f_rgb_n = i_tse_f_rgb / i_tse_f_rgb.norm(dim=-1, keepdim=True)
             # i_tse_f_ir_n = i_tse_f_ir[imgtype==1] / i_tse_f_ir[imgtype==1].norm(dim=-1, keepdim=True)
             # t_tse_f_rgb_n = t_tse_f_rgb[imgtype==1] / t_tse_f_rgb[imgtype==1].norm(dim=-1, keepdim=True)
             # t_tse_f_ir_n = t_tse_f_ir[imgtype==1] / t_tse_f_ir[imgtype==1].norm(dim=-1, keepdim=True)
-
-            # loss5 = coach.compute_direction_loss((i_tse_f_rgb_n - i_tse_f_ir_n).detach(), t_tse_f_rgb_n-t_tse_f_ir_n)
-            # loss5 = (label_hat_batch_rgb[imgtype==1] * loss5).sum() / label_hat_batch_rgb[imgtype==1].sum()
-
-            i_feats_irn = i_feats_ir[imgtype==1] / i_feats_ir[imgtype==1].norm(dim=-1, keepdim=True)
-            i_feats_rgbn = i_feats_rgb / i_feats_rgb.norm(dim=-1, keepdim=True)
-
-            t_feats_irn = t_feats_ir[imgtype==1] / t_feats_ir[imgtype==1].norm(dim=-1, keepdim=True)
-            t_feats_rgbn = t_feats_rgb[imgtype==1] / t_feats_rgb[imgtype==1].norm(dim=-1, keepdim=True)
             
-            i_tse_f_rgb_n = i_tse_f_rgb / i_tse_f_rgb.norm(dim=-1, keepdim=True)
-            i_tse_f_ir_n = i_tse_f_ir[imgtype==1] / i_tse_f_ir[imgtype==1].norm(dim=-1, keepdim=True)
-            t_tse_f_rgb_n = t_tse_f_rgb[imgtype==1] / t_tse_f_rgb[imgtype==1].norm(dim=-1, keepdim=True)
-            t_tse_f_ir_n = t_tse_f_ir[imgtype==1] / t_tse_f_ir[imgtype==1].norm(dim=-1, keepdim=True)
+            i_feats_irn = F.normalize(i_feats_ir[imgtype==1], dim=-1, eps=1e-8)
+            i_feats_rgbn = F.normalize(i_feats_rgb, dim=-1, eps=1e-8)
+            t_feats_irn = F.normalize(t_feats_ir[imgtype==1], dim=-1, eps=1e-8)
+            t_feats_rgbn = F.normalize(t_feats_rgb[imgtype==1], dim=-1, eps=1e-8)
+            i_tse_f_rgb_n = F.normalize(i_tse_f_rgb, dim=-1, eps=1e-8)
+            i_tse_f_ir_n = F.normalize(i_tse_f_ir[imgtype==1], dim=-1, eps=1e-8)
+            t_tse_f_rgb_n = F.normalize(t_tse_f_rgb[imgtype==1], dim=-1, eps=1e-8)  
+            t_tse_f_ir_n = F.normalize(t_tse_f_ir[imgtype==1], dim=-1, eps=1e-8)
 
-            i_local_rgb = image_feats[:, 1:, :].mean(dim=1).float()
-            i_local_ir = image_feats_ir[:, 1:, :].mean(dim=1).float()
-
-            i_local_rgbn = i_local_rgb / i_local_rgb.norm(dim=-1, keepdim=True)
-            i_local_irn = i_local_ir[imgtype==1] / i_local_ir[imgtype==1].norm(dim=-1, keepdim=True)
+            i_mean_rgb = image_feats.mean(dim=1).float()
+            i_mean_ir = image_feats_ir.mean(dim=1).float()
+            # i_mean_rgbn = i_mean_rgb / i_mean_rgb.norm(dim=-1, keepdim=True)
+            # i_mean_irn = i_mean_ir[imgtype==1] / i_mean_ir[imgtype==1].norm(dim=-1, keepdim=True)
+            i_mean_rgbn = F.normalize(i_mean_rgb, dim=-1, eps=1e-8)
+            i_mean_irn = F.normalize(i_mean_ir[imgtype==1], dim=-1, eps=1e-8)
             
-            loss5 = coach.compute_sdm(t_feats_rgbn, t_feats_irn, i_feats_rgbn, i_feats_irn, batch['pids'][imgtype==1])
-            loss5 = (label_hat_batch_rgb[imgtype==1] * loss5).sum() / label_hat_batch_rgb[imgtype==1].sum()
-            loss6 = coach.compute_sdm(t_feats_rgbn, t_tse_f_ir_n, i_feats_rgbn, i_tse_f_ir_n, batch['pids'][imgtype==1])
-            loss6 = (label_hat_batch_rgb[imgtype==1] * loss6).sum() / label_hat_batch_rgb[imgtype==1].sum()
+            bge_sdt = coach.compute_sdm(t_feats_rgbn, t_feats_irn, i_feats_rgbn, i_feats_irn, batch['pids'][imgtype==1])
+            bge_sdt= (label_hat_batch_rgb[imgtype==1] * bge_sdt).sum() / (label_hat_batch_rgb[imgtype==1].sum() + 1e-8)
+            tse_sdt = coach.compute_sdm(t_feats_rgbn, t_tse_f_ir_n, i_feats_rgbn, i_tse_f_ir_n, batch['pids'][imgtype==1])
+            tse_sdt = (label_hat_batch_rgb[imgtype==1] * tse_sdt).sum() / (label_hat_batch_rgb[imgtype==1].sum() + 1e-8)
 
-            loss7 = 1 - coach.compute_direction_loss(i_local_irn,  i_local_rgbn)
-            loss7 = (label_hat_batch_rgb[imgtype==1] * loss7).sum() / label_hat_batch_rgb[imgtype==1].sum()
+            orth = (1 - coach.compute_direction_loss(i_mean_irn,  i_mean_rgbn)) + (1 - coach.compute_direction_loss(i_tse_f_rgb_n, i_tse_f_ir_n))
+            orth = (label_hat_batch_rgb[imgtype==1] * orth).sum() / (label_hat_batch_rgb[imgtype==1].sum() + 1e-8)
 
 
-            if args.dataset_name == 'SYSU':
-                total_loss = loss1 + loss2 + loss3 + loss4 + loss5 + loss6 + loss7
-            elif args.dataset_name == 'LLCM':
-                total_loss = 0.1 * (loss1 + loss2 + loss5 + loss6 + loss7) + 0.5 * (loss3+loss4) 
+            total_loss = 0.1 * (bge_cr + tse_cr + orth) + bge_ci + tse_ci + bge_sdt + tse_sdt
             batch_size = batch['images'].shape[0]
-            meters['loss'].update(total_loss.item(), batch_size)
-            meters['loss1'].update(loss1, batch_size)
-            # meters['loss2'].update(loss2, batch_size)
-            meters['loss3'].update(loss3, batch_size)
-            # meters['loss4'].update(loss4, batch_size)
-            meters['direction_loss'].update(loss5, batch_size)
-            meters['loss6'].update(loss6, batch_size)
-            meters['loss7'].update(loss7, batch_size)
+            
             
             optimizer.zero_grad()
             total_loss.backward()
             optimizer.step()
-            # synchronize()
 
             if (n_iter + 1) % log_period == 0:
                 info_str = f"Epoch[{epoch}] Iteration[{n_iter + 1}/{len(train_loader)}]"
@@ -386,7 +365,6 @@ def train(args, coach):
                 logger.info(info_str)       
  
         tb_writer.add_scalar('lr', scheduler.get_lr()[0], epoch)
-        # tb_writer.add_scalar('temperature', ret['temperature'], epoch)
         for k, v in meters.items():
             if v.avg >= 0:
                 tb_writer.add_scalar(k, v.avg, epoch)
@@ -405,7 +383,6 @@ def train(args, coach):
                 logger.info("Validation Results - Epoch: {}".format(epoch))
                 top1_rgb = evaluator.eval(model.eval())
                 top1 = evaluator2.eval(model.eval())
-                # top2 = evaluator3.eval(model.eval())
                 top1 = (top1_rgb + top1) / 2
                 if best_top1 < top1:
                     best_top1 = top1
@@ -417,9 +394,7 @@ def train(args, coach):
                             logger.info(f"Saved best model to {best_model_path}")
                         except Exception as e:
                             logger.warning(f"Failed to save best model: {e}")
-                    # checkpointer.save("best", **arguments)
         
-    # end for epoch
 
     # After training, load best model from disk (if exists) and run evaluators
     if get_rank() == 0:
@@ -443,5 +418,3 @@ def train(args, coach):
                 logger.warning(f"Failed to load/evaluate best model: {e}")
         else:
             logger.info("No best model file found; skipping final evaluation.")
-    
-

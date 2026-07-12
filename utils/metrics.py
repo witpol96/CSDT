@@ -13,6 +13,7 @@ import torch.nn.functional as F
 import logging
 
 
+
 def rank(similarity, q_pids, g_pids, max_rank=10, get_mAP=True):
     if get_mAP:
         indices = torch.argsort(similarity, dim=1, descending=True)
@@ -53,12 +54,11 @@ def get_metrics(similarity, qids, gids, n_, retur_indices=False):
     else:
         return [n_, t2i_cmc[0], t2i_cmc[4], t2i_cmc[9], t2i_mAP, t2i_mINP, t2i_cmc[0]+ t2i_cmc[4]+ t2i_cmc[9]]
 
-
 class Evaluator():
     def __init__(self, img_loader, txt_loader):
         self.img_loader = img_loader # gallery
         self.txt_loader = txt_loader # query
-        self.logger = logging.getLogger("RDE.eval")
+        self.logger = logging.getLogger("CSDT.eval")
 
     def _compute_embedding(self, model):
         model = model.eval()
@@ -122,11 +122,15 @@ class Evaluator():
         vq_feats = F.normalize(vq_feats, p=2, dim=1) # text features
         vg_feats = F.normalize(vg_feats, p=2, dim=1) # image features
         sims_tse = vq_feats@vg_feats.t()
+
+        sims_fuse = (sims_bse + sims_tse) / 2
+
+        # analyze_top1_effect(sims_bse, sims_tse, sims_fuse, qids, gids, self.logger, prefix='RGB')
         
         sims_dict = {
             'BGE': sims_bse,
             'TSE': sims_tse,
-            'BGE+TSE': (sims_bse+sims_tse)/2
+            'BGE+TSE': sims_fuse
         }
 
         table = PrettyTable(["task", "R1", "R5", "R10", "mAP", "mINP","rSum"])
@@ -157,7 +161,7 @@ class EvaluatorIR():
     def __init__(self, img_loader, txt_loader):
         self.img_loader = img_loader # gallery
         self.txt_loader = txt_loader # query
-        self.logger = logging.getLogger("RDE.eval")
+        self.logger = logging.getLogger("CSDT.eval")
 
     def _compute_embedding(self, model):
         model = model.eval()
@@ -210,7 +214,7 @@ class EvaluatorIR():
             img = img.to(device)
             with torch.no_grad():
                 img_feat, atten_i = model.encode_ir_image(img)
-                img_feat1 = model.ir_visul_emb_layer(img_feat, atten_i, 0).float()
+                img_feat1 = model.share_visul_emb_layer(img_feat, atten_i, 0).float()
             gids.append(pid.view(-1)) # flatten 
             gfeats.append(img_feat1)
         gids = torch.cat(gids, 0)
@@ -227,10 +231,13 @@ class EvaluatorIR():
         vq_feats = F.normalize(vq_feats, p=2, dim=1) # text features
         vg_feats = F.normalize(vg_feats, p=2, dim=1) # image features
         sims_tse = vq_feats@vg_feats.t()
+        sim_fuse = (sims_bse + sims_tse) / 2
+        # analyze_top1_effect(sims_bse, sims_tse, sim_fuse, qids, gids, self.logger, prefix='IR')
+
         sims_dict = {
             'BGE': sims_bse,
             'TSE': sims_tse,
-            'BGE+TSE': (sims_bse+sims_tse)/2
+            'BGE+TSE': sim_fuse
         }
 
         table = PrettyTable(["task", "R1", "R5", "R10", "mAP", "mINP","rSum"])
@@ -260,7 +267,7 @@ class EvaluatorRGB():
     def __init__(self, img_loader, txt_loader):
         self.img_loader = img_loader # gallery
         self.txt_loader = txt_loader # query
-        self.logger = logging.getLogger("RDE.eval")
+        self.logger = logging.getLogger("CSDT.eval")
 
     def _compute_embedding(self, model):
         model = model.eval()
@@ -300,7 +307,7 @@ class EvaluatorRGB():
             caption = caption.to(device)
             with torch.no_grad():
                 text_feat, atten_t = model.encode_rgb_text(caption)
-                text_feat = model.ir_texual_emb_layer(text_feat, caption, atten_t).float().cpu()
+                text_feat = model.rgb_texual_emb_layer(text_feat, caption, atten_t).float().cpu()
 
             qids.append(pid.view(-1)) # flatten 
             qfeats.append(text_feat)
@@ -312,7 +319,7 @@ class EvaluatorRGB():
             img = img.to(device)
             with torch.no_grad():
                 img_feat, atten_i = model.encode_rgb_image(img)
-                img_feat1 = model.ir_visul_emb_layer(img_feat, atten_i, 0).float()
+                img_feat1 = model.share_visul_emb_layer(img_feat, atten_i, 0).float()
             gids.append(pid.view(-1)) # flatten 
             gfeats.append(img_feat1)
         gids = torch.cat(gids, 0)
@@ -330,10 +337,13 @@ class EvaluatorRGB():
         vg_feats = F.normalize(vg_feats, p=2, dim=1) # image features
         sims_tse = vq_feats@vg_feats.t()
 
+        sim_fuse = (sims_bse + sims_tse) / 2
+        # analyze_top1_effect(sims_bse, sims_tse, sim_fuse, qids, gids, self.logger, prefix='RGB')
+
         sims_dict = {
             'BGE': sims_bse,
             'TSE': sims_tse,
-            'BGE+TSE': (sims_bse+sims_tse)/2
+            'BGE+TSE': sim_fuse
         }
 
         table = PrettyTable(["task", "R1", "R5", "R10", "mAP", "mINP","rSum"])
