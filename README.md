@@ -17,7 +17,7 @@ pip3 install torch==2.5.1+cu121 torchvision==0.20.1+cu121 torchaudio==2.5.1+cu12
 pip3 install -r requirements.txt
 ~~~
 #### 3. Prepare Datasets and Pretrained Model
-Download the SYSU-MM01 and ORBench datasets first. Afterwards, integrate the annotations of SYSU-TVI into the SYSU-MM01 directory, and arrange all datasets following the specified file structure below.
+Download the [SYSU-MM01](http://isee.sysu.edu.cn/project/RGBIRReID.htm) and [ORBench](https://github.com/Zplusdragon/ReID5o_ORBench) datasets first. Afterwards, integrate the [annotations of SYSU-TVI](https://drive.google.com/drive/folders/1orEFAebr5b03mWTKf2Zh_wuwEAaAPrDK?usp=sharing) into the SYSU-MM01 directory, and arrange all datasets following the specified file structure below.
 ~~~
 .
 ├── SYSU-MM01
@@ -35,7 +35,7 @@ Download the SYSU-MM01 and ORBench datasets first. Afterwards, integrate the ann
 │   └── llcm_data_captions.json
 ...
 ~~~
-Download the pre-trained model from HAM and store it in an appropriate directory.
+Download the pre-trained model from [HAM](https://github.com/MPI-Lab/HAM) and store it in an appropriate directory.
 
 ## Training
 Modify the path-related parameters in `scripts/run_SYSU.sh` and `scripts/run_LLCM.sh`, then run the scripts.
