@@ -17,7 +17,7 @@ pip3 install torch==2.5.1+cu121 torchvision==0.20.1+cu121 torchaudio==2.5.1+cu12
 pip3 install -r requirements.txt
 ~~~
 #### 3. Prepare Datasets and Pretrained Model
-Download the [SYSU-MM01](http://isee.sysu.edu.cn/project/RGBIRReID.htm) and [ORBench](https://github.com/Zplusdragon/ReID5o_ORBench) datasets first. Afterwards, integrate the [annotations of SYSU-TVI](https://drive.google.com/drive/folders/1orEFAebr5b03mWTKf2Zh_wuwEAaAPrDK?usp=sharing) into the SYSU-MM01 directory, and arrange all datasets following the specified file structure below.
+Download the [SYSU-MM01](http://isee.sysu.edu.cn/project/RGBIRReID.htm) and [ORBench](https://github.com/Zplusdragon/ReID5o_ORBench) datasets first. Afterwards, integrate the [annotations of SYSU-TVI](https://drive.google.com/drive/folders/1orEFAebr5b03mWTKf2Zh_wuwEAaAPrDK?usp=sharing) into the SYSU-MM01 directory, and arrange all datasets following the specified file structure below. llcm_data_captions.json will be automatically generated upon the first execution of experiments with run_LLCM.sh.
 ~~~
 .
 ├── SYSU-MM01

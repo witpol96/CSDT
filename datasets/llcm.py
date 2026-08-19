@@ -3,6 +3,7 @@ from typing import List
 
 from utils.iotools import read_json
 from .bases import BaseDataset
+from .llcm_annotations import build_llcm_data_captions
 import json
 import torch
 import random
@@ -14,6 +15,8 @@ class LLCMDataset(BaseDataset):
         self.dataset_dir = os.path.join(root, self.dataset_dir)
         self.img_dir = self.dataset_dir
         self.anno_path = os.path.join(self.dataset_dir, 'llcm_data_captions.json')
+        if not os.path.exists(self.anno_path):
+            build_llcm_data_captions(self.dataset_dir, self.anno_path)
         self._check_before_run()
 
         self.train_annos, self.test_annos, self.val_annos = self._split_anno(self.anno_path)
